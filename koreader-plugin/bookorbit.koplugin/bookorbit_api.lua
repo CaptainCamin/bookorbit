@@ -251,6 +251,8 @@ local function sendHttpRequest(request)
     return result, code, headers, status
 end
 
+BookOrbitApi.sendHttpRequest = sendHttpRequest
+
 function BookOrbitApi:isConfigured()
     return self.server_url ~= nil and self.username ~= nil and self.userkey ~= nil
 end

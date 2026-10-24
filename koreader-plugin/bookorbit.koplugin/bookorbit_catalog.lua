@@ -38,6 +38,7 @@ local T = require("ffi/util").template
 local _ = require("gettext")
 
 local BookOrbitApi = require("bookorbit_api")
+local HardcoverClient = require("bookorbit_hardcover_client")
 local BoardMetrics = require("bookorbit_board_metrics")
 local BookOrbitStateManager = require("bookorbit_state_manager")
 local CatalogUtil = require("bookorbit_catalog_util")
@@ -296,7 +297,7 @@ function BookOrbitCatalog:setApi(api)
         self.bulk_select_all = false
     end
     self.api = api
-    self.client = BookOrbitApi.new(api)
+    self.client = (api and api.hardcover_token and api.hardcover_token ~= "") and HardcoverClient.new(api) or BookOrbitApi.new(api)
     if changed and self.current_context then
         self:goDashboard()
         self:hydrateOnDeviceMaps()

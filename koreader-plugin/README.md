@@ -95,3 +95,7 @@ New bookmarks retain their source file. Mapping into a structurally different si
 ### EPUB delivery defaults
 
 With plugin 1.7.0 and a supported server, set the default in BookOrbit web Settings > KOReader > Sync Settings > KOReader EPUB delivery. Devices can override the credential default. In KOReader, BookOrbit > Download > Settings > Read-aloud EPUB delivery edits the same server device setting. The single-download dialog offers Use BookOrbit default and an override to the other EPUB variant. Existing local preferences are imported once when the server has no configured default, and interrupted transfers keep their captured variant.
+
+## Hardcover data source (experimental)
+
+Set `hardcover_token` (a Hardcover personal access token) in the plugin's settings file and the catalog screens read from Hardcover instead of a BookOrbit server: dashboard, continue reading, shelves (Hardcover statuses, shown as collections), reading goal and book details. The data layer is `bookorbit_hardcover_client.lua` (same `catalog*` calls as `BookOrbitApi`) and `bookorbit_hardcover_shape.lua` (Hardcover rows to BookOrbit's tables). It is read-only; rating and status changes are refused. Streak, heatmap, year ago, highlights, achievements, search, authors, series browsing and downloads have no Hardcover source yet and show empty. The BookOrbit login is still needed to open the catalog.

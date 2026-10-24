@@ -266,6 +266,7 @@ function BookOrbit:apiOpts(background_requests)
         server_url = self.settings.server_url,
         username = self.settings.username,
         userkey = self.settings.userkey,
+        hardcover_token = self.settings.hardcover_token,
         device_id = self.device_id,
         device_model = Device.model,
         plugin_version = PLUGIN_VERSION,

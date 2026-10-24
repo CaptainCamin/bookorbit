@@ -379,7 +379,7 @@ function CatalogThumbnails:downloadThumbnailBatch(batch, generation)
                 temp = self.thumbnail_temp_dir .. "/"
                     .. self.thumbnail_cache_session_id .. "_" .. generation .. "_" .. key .. ".part"
             end
-            jobs[#jobs + 1] = { id = book.id, key = key, path = path, temp = temp, author_photo = book.author_photo == true }
+            jobs[#jobs + 1] = { id = book.id, url = book.thumbnailUrl, key = key, path = path, temp = temp, author_photo = book.author_photo == true }
         end
     end
     if #jobs == 0 then return {} end
@@ -391,6 +391,7 @@ function CatalogThumbnails:downloadThumbnailBatch(batch, generation)
             local download = job.author_photo and client.downloadCatalogAuthorPhoto or client.downloadCatalogThumbnail
             local ok, err = download(client, job.id, job.path, {
                 temp_path = job.temp,
+                url = job.url,
                 max_bytes = THUMBNAIL_MAX_BYTES,
                 background = false,
             })
