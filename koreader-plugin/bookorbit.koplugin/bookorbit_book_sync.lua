@@ -225,7 +225,7 @@ local function finish(ctx, err)
         logger.err("BookOrbit: lifecycle sync stopped because its durable state could not be updated")
     else
         if ctx.interactive and not ctx.quiet then
-            local text = T(_("BookOrbit: book synced. %1 reading events."), ctx.counts.page_stats)
+            local text = T(_("HardcoverOrbit: book synced. %1 reading events."), ctx.counts.page_stats)
             if ctx.highlight_summary and BookOrbitHighlightSummary.hasCounts(ctx.highlight_summary) then
                 text = text .. "\n" .. BookOrbitHighlightSummary.message(ctx.highlight_summary)
             else

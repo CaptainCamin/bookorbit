@@ -179,6 +179,10 @@ function BoardData.yearMinutes(now, server_year)
         end
     end
     local daily = BoardData.localDaily(now)
+    -- Hardcover mode sends only what other devices read, as estimated minutes
+    -- the device did not see: those add to the device's own, and are marked.
+    local additive = type(server_year) == "table" and server_year.additive == true
+    local estimated = {}
     local values = {}
     for i = 1, BoardData.HEATMAP_DAYS do
         local t = start + (i - 1) * DAY + 12 * 3600
@@ -187,10 +191,15 @@ function BoardData.yearMinutes(now, server_year)
         else
             local key = dateKey(t)
             local local_min = (daily[key] or 0) / 60
-            values[i] = math.floor(math.max(local_min, server[key] or 0) + 0.5)
+            if additive then
+                values[i] = math.floor(local_min + (server[key] or 0) + 0.5)
+                estimated[i] = (server[key] or 0) > 0 or nil
+            else
+                values[i] = math.floor(math.max(local_min, server[key] or 0) + 0.5)
+            end
         end
     end
-    return values, start + 12 * 3600, today
+    return values, start + 12 * 3600, today, estimated
 end
 
 -- When the current book ends at this reader's pace, from its own statistics.
@@ -703,7 +712,7 @@ function BoardData.build(catalog, context, now)
     }
     d.highlight = type(body.highlightOfTheDay) == "table" and body.highlightOfTheDay or nil
 
-    d.heatmap, d.heatmap_start, d.today_start = BoardData.yearMinutes(now, body.readingYear)
+    d.heatmap, d.heatmap_start, d.today_start, d.heatmap_est = BoardData.yearMinutes(now, body.readingYear)
     local week = {}
     local today_index = nil
     for i = 1, BoardData.HEATMAP_DAYS do
@@ -731,6 +740,7 @@ function BoardData.build(catalog, context, now)
         d.year_ago = {
             book = decorate(year_ago.book),
             minutes = tonumber(year_ago.minutes) or 0,
+            estimated = year_ago.estimated == true,
             days = tonumber(year_ago.days) or 0,
             stopped_at = tonumber(year_ago.endProgress) and math.floor(tonumber(year_ago.endProgress) + 0.5) or nil,
             when = BoardData.partOfMonth(year_ago.firstDay),

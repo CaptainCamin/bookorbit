@@ -117,6 +117,8 @@ local function build(page, sw, sh)
         space(nil, px(14)),
         MenuUI.pill(_("Sign in"), { h = 50, s = 16, w = card_w, action = { kind = "sign-in" } }),
         space(nil, px(8)),
+        MenuUI.pill(_("Use Hardcover instead"), { kind = "outline", h = 44, s = 15, w = card_w, action = { kind = "hardcover" } }),
+        space(nil, px(8)),
         hstack({ w = card_w }, { flex(0), MenuUI.pill(_("Not now"), { kind = "ghost", h = 40, s = 14, action = { kind = "close" } }), flex(0) }),
     })
     local header = MenuUI.pageHeader(w, _("Sign in to BookOrbit"), {
@@ -275,6 +277,12 @@ local function onAction(page, action)
         test(page)
     elseif kind == "sign-in" then
         signIn(page)
+    elseif kind == "hardcover" then
+        page.plugin:signInHardcover(function(ok)
+            if not ok or page.closed then return end
+            page:close()
+            if page.on_signed_in then page.on_signed_in() end
+        end)
     end
     return true
 end

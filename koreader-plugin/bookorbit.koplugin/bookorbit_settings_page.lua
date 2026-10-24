@@ -59,7 +59,7 @@ end
 
 local function openingSummary(page)
     local mode = Settings.openMode(page.plugin.settings)
-    local first = mode == 3 and _("BookOrbit is home") or mode == 2 and _("At startup") or _("File browser first")
+    local first = mode == 3 and _("HardcoverOrbit is home") or mode == 2 and _("At startup") or _("File browser first")
     return first .. " · " .. shortcutLabel(page)
 end
 
@@ -231,7 +231,7 @@ local function openingBody(page, w, embedded)
     local bar_card = MenuUI.card(w, {
         space(nil, px(4)),
         menuBarStrip(page, iw),
-        MenuUI.row(iw, { icon = MenuUI.tabIcon(px(24), page.plugin:menuBarIconPath()), label = _("BookOrbit in the menu bar"),
+        MenuUI.row(iw, { icon = MenuUI.tabIcon(px(24), page.plugin:menuBarIconPath()), label = _("HardcoverOrbit in the menu bar"),
             sub = enabled and _("One tap from KOReader's top menu") or _("Only under Tools in KOReader's menu"), toggle = enabled, action = { kind = "menu-bar" } }),
     })
 
@@ -361,6 +361,12 @@ local function accountBody(page, w, embedded)
         }),
         space(nil, px(16)),
         MenuUI.group(w, {
+            page.plugin:hasHardcover()
+                and MenuUI.row(iw, { icon = "log-out", label = _("Sign out of Hardcover"), sub = _("The catalog goes back to BookOrbit"), action = { kind = "hardcover-sign-out" } })
+                or MenuUI.row(iw, { icon = "book-open", label = _("Sign in to Hardcover"), sub = _("Use your Hardcover library instead of a server"), action = { kind = "hardcover-sign-in" } }),
+        }),
+        space(nil, px(16)),
+        MenuUI.group(w, {
             MenuUI.row(iw, { icon = "log-out", label = _("Sign out"), sub = _("This device stops syncing until you sign in again"), action = { kind = "sign-out" } }),
         }),
     }
@@ -380,6 +386,9 @@ local function recheckRow(page)
     return o
 end
 
+local BOOKORBIT_URL = "https://github.com/bookorbit/bookorbit"
+local SOURCE_URL = "https://github.com/CaptainCamin/bookorbit"
+
 local function aboutBody(page, w, embedded)
     local plugin = page.plugin
     local iw = MenuUI.rowsIn(w)
@@ -393,11 +402,25 @@ local function aboutBody(page, w, embedded)
         MenuUI.card(w, {
             hstack({ w = iw, h = px(76), gap = px(12) }, {
                 vstack({ w = mid_w }, {
-                    text(_("BookOrbit for KOReader"), { s = 16, b = true, w = mid_w }),
+                    text(_("HardcoverOrbit for KOReader"), { s = 16, b = true, w = mid_w }),
                     text(update and T(_("Version %1 is ready, you have %2"), update, plugin.PLUGIN_VERSION) or T(_("Version %1"), plugin.PLUGIN_VERSION), { s = 13, col = INK.g4, w = mid_w }),
                 }),
                 pill,
             }),
+        }),
+        space(nil, px(16)),
+        MenuUI.card(w, {
+            vstack({ w = iw, gap = px(6) }, {
+                text(_("Powered by BookOrbit"), { s = 16, b = true, w = iw }),
+                text(_("This is a modified version of BookOrbit and is not an official BookOrbit release. Modified 2026-10-24."), { s = 13, w = iw, lines = 4 }),
+                text(_("Copyright (C) 2025-2026 neon. Additional copyright is held by the respective BookOrbit contributors."), { s = 13, col = INK.g4, w = iw, lines = 3 }),
+                text(_("Licensed under the GNU Affero General Public License, version 3 only, with additional terms. This software is provided without warranty. You may redistribute and modify it under those terms."), { s = 13, col = INK.g4, w = iw, lines = 5 }),
+            }),
+        }),
+        space(nil, px(8)),
+        MenuUI.group(w, {
+            MenuUI.row(iw, { icon = "external-link", label = _("Original project: BookOrbit"), sub = BOOKORBIT_URL, sub_data = true, action = { kind = "open-link", url = BOOKORBIT_URL } }),
+            MenuUI.row(iw, { icon = "external-link", label = _("Source of this version"), sub = SOURCE_URL, sub_data = true, action = { kind = "open-link", url = SOURCE_URL } }),
         }),
         space(nil, px(16)),
         MenuUI.group(w, {
@@ -515,10 +538,10 @@ local function build(page, sw, sh)
             }),
         }
     elseif view == "root" then
-        items = { MenuUI.pageHeader(w, _("Settings"), { sub = _("BookOrbit") }), space(nil, px(8)) }
+        items = { MenuUI.pageHeader(w, _("Settings"), { sub = _("HardcoverOrbit") }), space(nil, px(8)) }
         for _i, item in ipairs(settingsList(page, w, false)) do table.insert(items, item) end
         table.insert(items, flex(px(8)))
-        table.insert(items, text(T(_("BookOrbit for KOReader %1"), page.plugin.PLUGIN_VERSION), { s = 13, col = INK.g4, w = w, align = "center" }))
+        table.insert(items, text(T(_("HardcoverOrbit for KOReader %1"), page.plugin.PLUGIN_VERSION), { s = 13, col = INK.g4, w = w, align = "center" }))
     else
         items = { MenuUI.pageHeader(w, titleOf(view), { sub = _("Settings") }), space(nil, px(8)) }
         for _i, item in ipairs(bodyFor(page, view, w, avail - px(72), false)) do table.insert(items, item) end
@@ -609,6 +632,18 @@ local function onAction(page, action)
         plugin:setServerAddress(function() page:refresh() end)
     elseif kind == "test" then
         plugin:startPageTest(page, function() page:refresh() end)
+    elseif kind == "open-link" then
+        local url = action.url
+        if Device:canOpenLink() then
+            Device:openLink(url)
+        else
+            require("ui/uimanager"):show(require("ui/widget/infomessage"):new{ text = url })
+        end
+    elseif kind == "hardcover-sign-in" then
+        plugin:signInHardcover(function() page:refresh() end)
+    elseif kind == "hardcover-sign-out" then
+        plugin:signOutHardcover(catalog)
+        page:close()
     elseif kind == "sign-out" then
         confirm(_("Sign out of BookOrbit?"), _("This device stops syncing until you sign in again. Books already downloaded stay on it."), _("Sign out"), function()
             page:close()

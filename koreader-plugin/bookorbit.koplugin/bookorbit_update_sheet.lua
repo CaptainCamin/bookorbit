@@ -47,7 +47,7 @@ local function body(page, w)
     local state = page.state
     if state == "available" then
         return {
-            DialogUI.titleRow(w, T(_("BookOrbit %1 is ready"), v(page.latest)), _("An update for this plugin")),
+            DialogUI.titleRow(w, T(_("HardcoverOrbit %1 is ready"), v(page.latest)), _("An update for this plugin")),
             versions(page, w),
             DialogUI.note(w, "info", _("It downloads from your BookOrbit server. KOReader then restarts to use it."), { col = INK.g3 }),
             DialogUI.pillRow(w, {
@@ -74,7 +74,7 @@ local function body(page, w)
             hstack({ w = w, gap = px(12), valign = "top" }, {
                 MenuUI.check(),
                 vstack({ w = tw }, {
-                    text(T(_("BookOrbit %1 is installed"), v(page.latest)), { s = 18, b = true, w = tw }),
+                    text(T(_("HardcoverOrbit %1 is installed"), v(page.latest)), { s = 18, b = true, w = tw }),
                     text(_("KOReader restarts to use it."), { s = 13, col = INK.g4, w = tw }),
                 }),
             }),
@@ -85,7 +85,7 @@ local function body(page, w)
         }
     end
     return {
-        DialogUI.titleRow(w, _("The update did not finish"), T(_("BookOrbit %1"), v(page.latest))),
+        DialogUI.titleRow(w, _("The update did not finish"), T(_("HardcoverOrbit %1"), v(page.latest))),
         DialogUI.warn(w, page.error_text or _("Something went wrong."), _("Nothing changed: this device still runs the version it had.")),
         DialogUI.pillRow(w, {
             { label = _("Close"), kind = "outline", action = { kind = "close" } },

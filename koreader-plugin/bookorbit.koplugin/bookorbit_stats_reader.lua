@@ -381,6 +381,25 @@ function Session:sessionRecords(since)
     }
 end
 
+-- The reader's own seconds per page: the median over books read since `since`
+-- that have at least 20 distinct pages. Events are capped at ten minutes, as
+-- for pace. nil without that much history.
+function Session:medianSecondsPerPage(since)
+    local res = self:select(
+        "SELECT COALESCE(SUM(MIN(duration, 600)), 0), COUNT(DISTINCT page) FROM page_stat_data"
+            .. " WHERE start_time >= ? GROUP BY id_book;", { since })
+    if not res or not res[1] then return nil end
+    local rates = {}
+    for i = 1, #res[1] do
+        local seconds, pages = tonumber(res[1][i]) or 0, tonumber(res[2][i]) or 0
+        if pages >= 20 and seconds > 0 then table.insert(rates, seconds / pages) end
+    end
+    if #rates == 0 then return nil end
+    table.sort(rates)
+    local mid = math.floor((#rates + 1) / 2)
+    return #rates % 2 == 1 and rates[mid] or (rates[mid] + rates[mid + 1]) / 2
+end
+
 -- How fast one book is being read: seconds per page from its own events, the
 -- page count it was last read at, and seconds read over the last `days` days.
 function Session:bookPace(ids, days)
@@ -535,6 +554,12 @@ end
 function BookOrbitStatsReader.getDailySeconds(since)
     return withSession(function(session)
         return session:dailySeconds(since)
+    end)
+end
+
+function BookOrbitStatsReader.getMedianSecondsPerPage(since)
+    return withSession(function(session)
+        return session:medianSecondsPerPage(since)
     end)
 end
 
