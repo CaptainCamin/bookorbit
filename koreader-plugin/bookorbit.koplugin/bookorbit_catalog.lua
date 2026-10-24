@@ -239,7 +239,7 @@ function BookOrbitTitleBar:generateVerticalLayout()
 end
 
 local BookOrbitCatalog = Menu:extend{
-    title = _("BookOrbit"),
+    title = _("HardcoverOrbit"),
     title_shrink_font_to_fit = true,
     title_bar_left_icon = "appbar.menu",
 }
@@ -1106,7 +1106,7 @@ function BookOrbitCatalog:titleForSection(section)
     if section == "smart-scopes" then return _("SmartScopes") end
     if section == "authors" then return _("Authors") end
     if section == "series" then return _("Series") end
-    return _("BookOrbit")
+    return _("HardcoverOrbit")
 end
 
 function BookOrbitCatalog:paramsForEntry(section, entry)
@@ -1787,7 +1787,7 @@ function BookOrbitCatalog:showBookActions()
     })
 
     dialog = ButtonDialog:new{
-        title = _("BookOrbit"),
+        title = _("HardcoverOrbit"),
         buttons = buttons,
     }
     UIManager:show(dialog)

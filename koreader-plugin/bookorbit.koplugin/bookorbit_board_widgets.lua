@@ -1541,6 +1541,12 @@ W.word = function(ctx, w, hh)
 end
 
 -- What you were reading this time last year.
+-- Minutes from Hardcover are pages at the reader's own pace: say so.
+local function yearAgoMinutes(y, formatter)
+    local text_ = formatter(y.minutes)
+    return y.estimated and (_("about") .. " " .. text_) or text_
+end
+
 W.yearago = function(ctx, w, hh)
     local y = ctx.d.year_ago
     local pad = px(12)
@@ -1565,8 +1571,8 @@ W.yearago = function(ctx, w, hh)
             local cover_w = math.floor(ih * 2 / 3 + 0.5)
             local tw = iw - cover_w - px(12)
             local lines = {
-                [2] = y.stopped_at and (T(_("Stopped at %1%"), y.stopped_at) .. " · " .. BoardData.formatShortDuration(y.minutes)) or BoardData.formatShortDuration(y.minutes),
-                [1] = y.stopped_at and T(_("Stopped at %1%"), y.stopped_at) or BoardData.formatShortDuration(y.minutes),
+                [2] = y.stopped_at and (T(_("Stopped at %1%"), y.stopped_at) .. " · " .. yearAgoMinutes(y, BoardData.formatShortDuration)) or yearAgoMinutes(y, BoardData.formatShortDuration),
+                [1] = y.stopped_at and T(_("Stopped at %1%"), y.stopped_at) or yearAgoMinutes(y, BoardData.formatShortDuration),
                 [0] = y.stopped_at and T(_("%1% read"), y.stopped_at) or "",
             }
             return hstack({ w = w, h = hh }, {
@@ -1593,7 +1599,7 @@ W.yearago = function(ctx, w, hh)
             local btn_h = px(34)
             local btn_inner = hstack({ h = btn_h, gap = px(6) }, { space(px(14) - px(6), 1), icon("book-open", px(15), { sw = 2.25 }), text(_("Pick it up"), { s = 13, b = true }), space(px(14) - px(6), 1) })
             local btn = BoardUI.box({ w = btn_inner:getSize().w, h = btn_h, radius = math.floor(btn_h / 2), border = math.max(1, px(1.5)) }, btn_inner)
-            local story = cfg.story and T(_.ngettext("%1 over %2 day, then you stopped at %3%.", "%1 over %2 days, then you stopped at %3%.", y.days), BoardData.formatDuration(y.minutes), y.days, y.stopped_at or 0)
+            local story = cfg.story and T(_.ngettext("%1 over %2 day, then you stopped at %3%.", "%1 over %2 days, then you stopped at %3%.", y.days), yearAgoMinutes(y, BoardData.formatDuration), y.days, y.stopped_at or 0)
                 or T(_("Stopped at %1%."), y.stopped_at or 0)
             return vstack({ w = w, h = hh, pad = pad }, {
                 head(iw, _("A year ago"), cfg.when and y.when and text(y.when, { s = 12, col = INK.g4 }) or nil),

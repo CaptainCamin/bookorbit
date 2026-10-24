@@ -267,6 +267,40 @@ function HardcoverClient:finishedDays(user_id, since_day)
     return days
 end
 
+-- The read that began around this day a year ago and got furthest, with a
+-- minutes figure estimated from pages at the reader's own pace. nil without a
+-- pace: Hardcover has no minutes, and a made-up default would mislead.
+function HardcoverClient:yearAgoBook(today, pace)
+    if not pace or pace <= 0 then return nil end
+    local from = os.date("%Y-%m-%d", today - 365 * DAY - 28 * DAY)
+    local to = os.date("%Y-%m-%d", today - 365 * DAY + 28 * DAY)
+    local range = '{_gte: "' .. from .. '", _lte: "' .. to .. '"}'
+    local data = self:graphql("query { me { user_books(where: {user_book_reads: {started_at: " .. range
+        .. "}}, limit: 20) { " .. listFields() .. " year_reads: user_book_reads(where: {started_at: " .. range
+        .. "}, order_by: {id: desc}, limit: 1) { progress_pages started_at finished_at } } } }")
+    local best, best_pages
+    for _i, user_book in ipairs(data and me(data).user_books or {}) do
+        local read = user_book.year_reads and user_book.year_reads[1]
+        local pages = read and tonumber(read.progress_pages) or 0
+        if read and pages > 0 and (not best_pages or pages > best_pages) then best, best_pages = user_book, pages end
+    end
+    if not best then return nil end
+    local read = best.year_reads[1]
+    local item = Shape.listItem(best)
+    local first, last = Shape.day(read.started_at), Shape.day(read.finished_at) or Shape.day(read.started_at)
+    local span = (Stats.parseTime(last) - Stats.parseTime(first)) / DAY
+    local total = best.edition and tonumber(best.edition.pages) or (best.book and tonumber(best.book.pages))
+    return {
+        book = item,
+        minutes = math.floor(best_pages * pace / 60 + 0.5),
+        days = math.max(1, math.floor(span + 1.5)),
+        endProgress = total and total > 0 and math.min(100, math.floor(100 * best_pages / total + 0.5)) or nil,
+        firstDay = first,
+        lastDay = last,
+        estimated = true,
+    }
+end
+
 -- Refreshes the cached reading days (resumable: at most MAX_STATS_PAGES pages
 -- a call, oldest first) and returns the dashboard's readingYear and streak.
 function HardcoverClient:readingStats(today)
@@ -301,7 +335,14 @@ function HardcoverClient:readingStats(today)
         store.save(state)
     end
 
-    return Stats.readingYear(state, today, pace), Stats.streak(state, today, device_daily, state.finished or {}), pace
+    local key = os.date("%Y-%m-%d", today)
+    if state.year_ago_day ~= key then
+        state.year_ago = self:yearAgoBook(today, pace) or false
+        state.year_ago_day = key
+        store.save(state)
+    end
+
+    return Stats.readingYear(state, today, pace), Stats.streak(state, today, device_daily, state.finished or {}), state.year_ago or nil
 end
 
 -- ----------------------------------------------------------------- dashboard
@@ -325,8 +366,9 @@ function HardcoverClient:catalogDashboard()
     local continue_reading = Shape.listItems(take(reading, CONTINUE_READING_LIMIT))
     local wanted = user.wanted or {}
     local year, streak
-    local stats_ok, stats_year, stats_streak = pcall(self.readingStats, self, os.time())
-    if stats_ok then year, streak = stats_year, stats_streak end
+    local year_ago
+    local stats_ok, stats_year, stats_streak, stats_year_ago = pcall(self.readingStats, self, os.time())
+    if stats_ok then year, streak, year_ago = stats_year, stats_streak, stats_year_ago end
     return {
         generatedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
         username = user.username or "",
@@ -338,6 +380,7 @@ function HardcoverClient:catalogDashboard()
         readingGoal = Shape.readingGoal(user.goals, today),
         readingStreak = streak or emptyStreak(),
         readingYear = year,
+        yearAgo = year_ago,
         finishedThisYear = Shape.finishedItems(user.finished),
     }
 end

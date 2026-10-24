@@ -740,6 +740,7 @@ function BoardData.build(catalog, context, now)
         d.year_ago = {
             book = decorate(year_ago.book),
             minutes = tonumber(year_ago.minutes) or 0,
+            estimated = year_ago.estimated == true,
             days = tonumber(year_ago.days) or 0,
             stopped_at = tonumber(year_ago.endProgress) and math.floor(tonumber(year_ago.endProgress) + 0.5) or nil,
             when = BoardData.partOfMonth(year_ago.firstDay),

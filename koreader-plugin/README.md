@@ -1,3 +1,7 @@
+# HardcoverOrbit for KOReader
+
+HardcoverOrbit is a modified version of BookOrbit's KOReader plugin and is not an official BookOrbit release (modified 2026-10-24). Powered by BookOrbit, <https://github.com/bookorbit/bookorbit>. Copyright (C) 2025-2026 neon and the BookOrbit contributors, AGPL-3.0 with the additional terms in `ADDITIONAL_TERMS.md`. The Settings, About screen shows this notice. The text below describes the original BookOrbit plugin, whose server features still work; the Hardcover section at the end covers what this version adds.
+
 # BookOrbit Sync plugin for KOReader
 
 Syncs your KOReader reading life into BookOrbit:
@@ -101,5 +105,5 @@ With plugin 1.7.0 and a supported server, set the default in BookOrbit web Setti
 Sign in with Hardcover (the sign-in page's "Use Hardcover instead", or Settings, Account) and the catalog screens read from Hardcover instead of a BookOrbit server, with no server login needed. Sign-in is Hardcover's device code flow, ported from HardcoverSync; tokens are read-only and kept in `bookorbit_hardcover_auth.lua` in KOReader's settings folder. Pasting a personal access token as `hardcover_token` in the plugin settings also works.
 
 - **Data layer:** `bookorbit_hardcover_client.lua` answers the same `catalog*` calls as `BookOrbitApi`, and `bookorbit_hardcover_shape.lua` maps Hardcover rows to BookOrbit's tables, so the screens are unchanged. Dashboard, continue reading, shelves (Hardcover statuses, shown as collections), goal, details, authors and series of your shelved books.
-- **Stats:** `bookorbit_hardcover_stats.lua` merges Hardcover's progress journal with KOReader's own statistics (device minutes win where the device saw the reading; other devices' pages become estimated minutes, drawn as outlined heatmap cells). Streak counts device days, steady progress from other devices and finished reads, never catch-up lumps. Badges are hidden.
+- **Stats:** `bookorbit_hardcover_stats.lua` merges Hardcover's progress journal with KOReader's own statistics (device minutes win where the device saw the reading; other devices' pages become estimated minutes, drawn as outlined heatmap cells). Streak counts device days, steady progress from other devices and finished reads, never catch-up lumps. Badges are hidden. A year ago picks the read that began around this day last year and got furthest, with minutes estimated from pages at your own pace (shown as "about"); it needs KOReader reading history to estimate from.
 - **Read-only:** rating and status changes are refused. Search, name filters, downloads and libraries have no Hardcover source and show empty.

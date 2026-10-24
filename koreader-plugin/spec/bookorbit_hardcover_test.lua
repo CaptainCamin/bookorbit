@@ -368,6 +368,21 @@ eq(stats_dash.readingYear.minutes[364], 15, "30 pages at 30 s")
 eq(stats_dash.readingStreak.currentStreak >= 1, true, "streak counts today")
 eq(saved.user_id, 7, "state saved per account")
 
+-- year ago
+local ya_client = clientWith(function()
+    return { data = { me = { { user_books = {
+        userBook({ book_id = 11, year_reads = { { progress_pages = 50, started_at = "2025-10-20" } } }),
+        userBook({ book_id = 12, year_reads = { { progress_pages = 180, started_at = "2025-10-22", finished_at = "2025-10-26" } } }),
+    } } } } }
+end)
+local ya = ya_client:yearAgoBook(Stats.parseTime("2026-10-24T12:00:00Z"), 30)
+eq(ya.book.id, 12, "the read that got furthest")
+eq(ya.minutes, 90, "180 pages at 30 s is 90 minutes")
+eq(ya.days, 5, "start to finish, both days counted")
+eq(ya.endProgress, 90, "180 of 200 pages")
+eq(ya.estimated, true, "minutes are marked as an estimate")
+eq(ya_client:yearAgoBook(Stats.parseTime("2026-10-24T12:00:00Z"), nil), nil, "no pace, no year ago")
+
 -- authors and series
 local list_client = clientWith(function(query)
     if query:find("authors(", 1, true) then

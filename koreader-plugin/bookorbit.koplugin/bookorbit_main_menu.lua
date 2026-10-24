@@ -346,7 +346,7 @@ function MainMenu:addToMainMenu(menu_items)
         end,
     })
     menu_items.bookorbit = {
-        text = _("BookOrbit"),
+        text = _("HardcoverOrbit"),
         -- Fallback placement only: BookOrbitMenuPin normally pins this entry
         -- right below calibre on the first page of the Tools menu.
         sorting_hint = "tools",

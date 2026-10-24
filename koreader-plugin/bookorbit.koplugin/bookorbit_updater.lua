@@ -336,7 +336,7 @@ function UpdateCheck:handleUpdateVersionResponse(body, interactive, prompt_allow
 
     if BookOrbitUpdater.isNewer(plugin_latest, PLUGIN_VERSION) ~= true then
         if interactive then
-            Toast.show(T(_("BookOrbit is up to date, v%1"), tostring(PLUGIN_VERSION):gsub("^v", "")))
+            Toast.show(T(_("HardcoverOrbit is up to date, v%1"), tostring(PLUGIN_VERSION):gsub("^v", "")))
         end
         return
     end

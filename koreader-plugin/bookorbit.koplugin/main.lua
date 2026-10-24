@@ -978,18 +978,18 @@ end
 
 function BookOrbit:onDispatcherRegisterActions()
     Dispatcher:registerAction("bookorbit_sync_now",
-        { category = "none", event = "BookOrbitSyncNow", title = _("BookOrbit: sync all books"), general = true })
+        { category = "none", event = "BookOrbitSyncNow", title = _("HardcoverOrbit: sync all books"), general = true })
     Dispatcher:registerAction("bookorbit_sync_book",
-        { category = "none", event = "BookOrbitSyncBook", title = _("BookOrbit: sync this book"), reader = true })
+        { category = "none", event = "BookOrbitSyncBook", title = _("HardcoverOrbit: sync this book"), reader = true })
     Dispatcher:registerAction("bookorbit_push_progress",
-        { category = "none", event = "BookOrbitPushProgress", title = _("BookOrbit: push progress"), reader = true })
+        { category = "none", event = "BookOrbitPushProgress", title = _("HardcoverOrbit: push progress"), reader = true })
     Dispatcher:registerAction("bookorbit_pull_progress",
-        { category = "none", event = "BookOrbitPullProgress", title = _("BookOrbit: pull progress"), reader = true })
+        { category = "none", event = "BookOrbitPullProgress", title = _("HardcoverOrbit: pull progress"), reader = true })
     Dispatcher:registerAction("bookorbit_this_book",
-        { category = "none", event = "BookOrbitThisBook", title = _("BookOrbit: this book"), reader = true })
+        { category = "none", event = "BookOrbitThisBook", title = _("HardcoverOrbit: this book"), reader = true })
     -- The action id predates the rename and is kept for existing gestures.
     Dispatcher:registerAction("bookorbit_open_dashboard",
-        { category = "none", event = "BookOrbitOpenDashboard", title = _("BookOrbit: open"), general = true, separator = true })
+        { category = "none", event = "BookOrbitOpenDashboard", title = _("HardcoverOrbit: open"), general = true, separator = true })
 end
 
 function BookOrbit:onReaderReady()
@@ -1191,11 +1191,11 @@ function BookOrbit:exchangeAnnotationsForOpenBook(reason, retry_count)
 
     self:recordHighlightSync(summary, error_code)
     if BookOrbitHighlightSummary.hasRemoteChanges(summary) then
-        Notification:notify(T(_("BookOrbit: %1 highlight(s) updated"),
+        Notification:notify(T(_("HardcoverOrbit: %1 highlight(s) updated"),
             summary.applied + summary.deleted))
     end
     if BookOrbitHighlightSummary.hasRemoteBookmarkChanges(summary) then
-        Notification:notify(T(_("BookOrbit: %1 bookmark(s) updated"),
+        Notification:notify(T(_("HardcoverOrbit: %1 bookmark(s) updated"),
             summary.bm_applied + summary.bm_deleted))
     end
     if ok and result then
@@ -1212,7 +1212,7 @@ end
 function BookOrbit:openCatalogBrowser(prefer_cached_dashboard)
     if self.catalog_browser ~= nil then return end
     self.catalog_browser = BookOrbitCatalog:new{
-        title = _("BookOrbit"),
+        title = _("HardcoverOrbit"),
         -- The catalog owns its subprocess boundaries explicitly, so every
         -- request path, including the ones that bypass fetch(), runs off the
         -- UI thread.

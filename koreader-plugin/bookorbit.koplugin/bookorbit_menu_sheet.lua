@@ -225,7 +225,7 @@ function MenuSheet.body(d, w, o)
             hstack({ w = bw, gap = px(12) }, {
                 icon("download", px(22), { sw = 2 }),
                 vstack({ w = mid_w }, {
-                    text(T(_("BookOrbit %1 is ready"), d.update), { s = 15, b = true, w = mid_w }),
+                    text(T(_("HardcoverOrbit %1 is ready"), d.update), { s = 15, b = true, w = mid_w }),
                     text(_("Takes a few seconds, then KOReader restarts"), { s = 13, col = INK.g4, w = mid_w, lines = 2, bg = INK.ge }),
                 }),
                 pill,
