@@ -298,9 +298,9 @@ end
 function MainMenu:onMenuBarIcon()
     closeKOReaderMenu(self.ui)
     UIManager:tickAfterNext(function()
-        if not self:isLoggedIn() then
+        if not self:isLoggedIn() and not self:hasHardcover() then
             self:openSignIn(function() self:onMenuBarIconAfterSignIn() end)
-        elseif self.ui and self.ui.document then
+        elseif self.ui and self.ui.document and self:isLoggedIn() then
             self:openBookSheet()
         else
             self:browseCatalog(false)
@@ -365,7 +365,7 @@ end
 
 -- ----------------------------------------------------------------- openers
 function MainMenu:openBookOrbit()
-    if not self:isLoggedIn() then
+    if not self:isLoggedIn() and not self:hasHardcover() then
         self:openSignIn(function() self:browseCatalog(false) end)
         return
     end
@@ -700,6 +700,44 @@ function MainMenu:completeSignIn(server_url, username, userkey)
             self:requestUpdateCheck(false, "login")
         end
     end)
+end
+
+-- ------------------------------------------------------------- Hardcover
+-- Hardcover is a second data source for the catalog: a pasted token or a
+-- signed-in session switches the screens to it, and neither needs a BookOrbit
+-- server login.
+function MainMenu:hardcoverAuth()
+    if not self.hardcover_auth then
+        self.hardcover_auth = require("bookorbit_hardcover_auth").new{ client_id = self.settings.hardcover_client_id }
+    end
+    return self.hardcover_auth
+end
+
+function MainMenu:hasHardcover()
+    local token = self.settings.hardcover_token
+    if type(token) == "string" and token ~= "" then return true end
+    -- A device without the OAuth modules simply has no Hardcover session.
+    local ok, signed_in = pcall(function() return self:hardcoverAuth():isSignedIn() end)
+    return ok and signed_in == true
+end
+
+function MainMenu:signInHardcover(on_done)
+    require("bookorbit_hardcover_signin").start(self:hardcoverAuth(), function(ok)
+        if ok then
+            self:clearAccountCaches()
+            self:refreshActiveCatalogApi(true)
+        end
+        if on_done then on_done(ok) end
+    end)
+end
+
+function MainMenu:signOutHardcover(catalog)
+    self:hardcoverAuth():signOut()
+    self.settings.hardcover_token = nil
+    self:clearAccountCaches()
+    G_reader_settings:flush()
+    self:refreshActiveCatalogApi(false)
+    if catalog then catalog:onCloseAllMenus() end
 end
 
 function MainMenu:signOut(catalog)

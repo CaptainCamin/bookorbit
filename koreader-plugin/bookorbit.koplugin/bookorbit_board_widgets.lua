@@ -581,7 +581,14 @@ W.heatmap = function(ctx, w, hh)
                 local i = offset + wk * 7 + day + 1
                 local col = level(d.heatmap[i])
                 if col then
-                    table.insert(cells, { x = wk * (cell + g), y = day * (cell + g), col = col, ring = i == today_i })
+                    local cell_def = { x = wk * (cell + g), y = day * (cell + g), col = col, ring = i == today_i }
+                    -- Minutes estimated from another device's pages: an outline,
+                    -- so the mark does not rest on shade alone.
+                    if d.heatmap_est and d.heatmap_est[i] then
+                        cell_def.border = math.max(1, px(1.5))
+                        if col == INK.gb or col == INK.ge then cell_def.col = INK.g4 end
+                    end
+                    table.insert(cells, cell_def)
                 end
             end
         end

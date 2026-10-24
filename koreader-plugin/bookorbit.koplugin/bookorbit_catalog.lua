@@ -297,7 +297,7 @@ function BookOrbitCatalog:setApi(api)
         self.bulk_select_all = false
     end
     self.api = api
-    self.client = (api and api.hardcover_token and api.hardcover_token ~= "") and HardcoverClient.new(api) or BookOrbitApi.new(api)
+    self.client = (api and (api.hardcover_auth or (api.hardcover_token and api.hardcover_token ~= ""))) and HardcoverClient.new(api) or BookOrbitApi.new(api)
     if changed and self.current_context then
         self:goDashboard()
         self:hydrateOnDeviceMaps()

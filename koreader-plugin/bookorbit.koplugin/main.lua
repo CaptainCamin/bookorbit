@@ -267,6 +267,7 @@ function BookOrbit:apiOpts(background_requests)
         username = self.settings.username,
         userkey = self.settings.userkey,
         hardcover_token = self.settings.hardcover_token,
+        hardcover_auth = self.hasHardcover and self:hasHardcover() and self.hardcover_auth or nil,
         device_id = self.device_id,
         device_model = Device.model,
         plugin_version = PLUGIN_VERSION,
@@ -951,7 +952,7 @@ function BookOrbit:maybeAutoOpenCatalog(mode)
     if mode == "home" then mode = "filemanager" end
     if mode ~= "filemanager" and mode ~= "always" then return end
     if self.provision_applied then return end
-    if not self:isLoggedIn() then return end
+    if not self:isLoggedIn() and not self:hasHardcover() then return end
     if self.catalog_browser ~= nil then return end
     if mode == "filemanager" and not (self.ui and self.ui.file_chooser ~= nil) then
         return
@@ -1412,7 +1413,7 @@ function BookOrbit:onShow()
     if not closed_at then return end
     PluginShare.bookorbit_return_home = nil
     if os.time() - closed_at > RETURN_HOME_WINDOW then return end
-    if self.settings.catalog_auto_open ~= "home" or not self:isLoggedIn() or self.catalog_browser then return end
+    if self.settings.catalog_auto_open ~= "home" or not (self:isLoggedIn() or self:hasHardcover()) or self.catalog_browser then return end
     self:openCatalogBrowser(true)
 end
 

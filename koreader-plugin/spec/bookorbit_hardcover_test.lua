@@ -255,8 +255,10 @@ local client = clientWith(function()
 end)
 eq(client.userkey, nil, "BookOrbit credentials never reach the Hardcover client")
 eq(client.hardcover_token, "hc_pat_x", "bearer prefix stripped")
+client.device_stats = { dailySeconds = function() return {} end, secondsPerPage = function() return nil end }
+client.stats_store = { load = function() return nil end, save = function() end }
 local dash = client:catalogDashboard()
-eq(#sent, 1, "dashboard is one request")
+eq(sent[1]:find("reading: user_books", 1, true) ~= nil, true, "the dashboard body is one request")
 eq(dash.displayName, "Chananya", "greeting")
 eq(dash.totalBooks, 615, "total")
 eq(dash.continueReading[1].id, 2, "continue reading newest start first")
@@ -295,5 +297,138 @@ local covers = HardcoverClient.new({ hardcover_token = "t" })
 local cover_ok, cover_err = covers:downloadCatalogThumbnail(1, "/tmp/x.jpg", {})
 eq(cover_ok, nil, "cover without url")
 eq(cover_err, "no_cover_url", "cover error")
+
+-- stats
+local Stats = require("bookorbit_hardcover_stats")
+eq(Stats.parseTime("2026-10-17T17:45:24.611758+00:00"), 1792259124, "parse utc time")
+eq(Stats.parseTime("2026-10-17T12:00:00+05:00"), 1792220400, "parse offset time")
+eq(Stats.parseTime("2026-10-17"), 1792195200, "parse plain day")
+
+local DAY = 86400
+local noon = Stats.parseTime("2026-10-20T12:00:00Z")
+local function iso(t) return os.date("!%Y-%m-%dT%H:%M:%SZ", t) end
+local function step(book, at, pages, was)
+    return { book_id = book, action_at = iso(at), metadata = { progress_pages = pages, progress_pages_was = was, user_book_read_id = book } }
+end
+
+local state = Stats.newState()
+local device = {}
+device[Stats.dateKey(noon - 3 * DAY)] = 1800 -- 30 minutes on the device the day of step 1
+Stats.apply(state, {
+    step(1, noon - 3 * DAY, 60, 0),                 -- 60 pages at 30 s/page = 30 min: the device saw it
+    step(2, noon + DAY, 40, 0),           -- nothing on the device: another device
+    step(2, noon + 2 * DAY, 400, 40),     -- 360 pages in a day: a catch-up
+    step(2, noon + 3 * DAY, 390, 400),    -- backwards: moves the baseline only
+    step(2, noon + 3 * DAY + 60, 395, 390),
+}, { device_daily = device, seconds_per_page = 30 })
+eq(state.days[Stats.dateKey(noon - 3 * DAY)], nil, "witnessed step is dropped")
+eq(state.days[Stats.dateKey(noon + DAY)].pages, 40, "unwitnessed step is kept")
+eq(state.days[Stats.dateKey(noon + DAY)].bulk, nil, "a day's steady reading is not bulk")
+eq(state.days[Stats.dateKey(noon + 2 * DAY)].bulk, true, "a 360 page step is a catch-up")
+eq(state.days[Stats.dateKey(noon + 3 * DAY)].pages, 5, "backwards step adds nothing, the step after counts from it")
+eq(state.watermark, iso(noon + 3 * DAY + 60), "watermark")
+
+local today = noon + 4 * DAY
+local year = Stats.readingYear(state, today, 30)
+eq(#year.minutes, 364, "a year of days")
+eq(year.minutes[364 - 3], 20, "40 pages at 30 s is 20 minutes")
+eq(year.minutes[364 - 2], 75, "catch-up pages are capped at 150 a day")
+eq(year.bulk[364 - 2], true, "bulk flagged")
+eq(year.additive, true, "marked additive")
+eq(Stats.readingYear(state, today, nil).minutes[364 - 3], 0, "no device pace, no minutes")
+
+local streak = Stats.streak(state, today, device, { [Stats.dateKey(noon + 2 * DAY)] = true })
+-- days: noon-3 (device), noon+1 (other device), noon+2 (finished; catch-up alone would not count),
+-- noon+3 (steady 5 pages), today (nothing yet, grace)
+eq(streak.currentStreak, 3, "current streak survives an empty today")
+eq(streak.longestStreak, 3, "longest")
+eq(#streak.lastSevenDays, 7, "seven days")
+eq(streak.lastSevenDays[7], false, "today not read yet")
+eq(Stats.streak(state, today, {}, {}).currentStreak, 1, "catch-up day breaks the streak without a finish")
+
+-- the client dashboard carries stats from a stubbed store and device
+local saved
+local stats_client = HardcoverClient.new({
+    hardcover_token = "t",
+    device_stats = { dailySeconds = function() return {} end, secondsPerPage = function() return 30 end },
+    stats_store = { load = function() return nil end, save = function(value) saved = value end },
+})
+stats_client.user_id = 7
+stats_client.request = function(_, _, _, body)
+    if body.query:find("reading_journals", 1, true) then
+        return { data = { reading_journals = { step(5, os.time() - 3600, 30, 0) } } }
+    elseif body.query:find("user_book_reads", 1, true) then
+        return { data = { user_book_reads = { { finished_at = os.date("%Y-%m-%d") } } } }
+    end
+    return { data = { me = { { id = 7, name = "N", reading = {}, finished = {}, wanted = {}, goals = {} } } } }
+end
+local stats_dash = stats_client:catalogDashboard()
+eq(stats_dash.readingYear.additive, true, "dashboard carries the reading year")
+eq(stats_dash.readingYear.minutes[364], 15, "30 pages at 30 s")
+eq(stats_dash.readingStreak.currentStreak >= 1, true, "streak counts today")
+eq(saved.user_id, 7, "state saved per account")
+
+-- authors and series
+local list_client = clientWith(function(query)
+    if query:find("authors(", 1, true) then
+        return { data = { authors = { { id = 1, name = "Ann" }, { id = 2, name = "Bo" }, { id = 3, name = "Cy" } } } }
+    end
+    return { data = { series = { { id = 9, name = "Saga", author = { name = "Ann" } } } } }
+end)
+list_client.user_id = 7
+local authors = list_client:catalogSection("authors", { size = 2 })
+eq(#authors.items, 2, "authors trimmed to the page")
+eq(authors.hasNext, true, "more authors")
+eq(authors.items[1].authorId, 1, "author id")
+local series = list_client:catalogSection("series", {})
+eq(series.items[1].seriesId, 9, "series id")
+eq(series.items[1].subtitle, "Ann", "series author")
+eq(#list_client:catalogSection("authors", { q = "an" }).items, 0, "no name filter")
+
+-- sign-in: tokens refresh once and persist
+package.loaded["json"] = package.loaded["json"] or { decode = function() return {} end }
+package.loaded["ssl.https"] = package.loaded["ssl.https"] or { request = function() return nil, 0 end }
+local OAuth = require("bookorbit_hardcover_oauth")
+local Auth = require("bookorbit_hardcover_auth")
+local store = {}
+local function open_settings()
+    return {
+        readSetting = function(_, key) return store[key] end,
+        saveSetting = function(_, key, value) store[key] = value end,
+        flush = function() end,
+    }
+end
+local refreshes = 0
+local fake = {
+    startDeviceFlow = function() return { device_code = "d", user_code = "ABCD", interval = 5, expires_in = 600 } end,
+    pollToken = function()
+        return "success", { access_token = "hc_at_one", refresh_token = "hc_rt_one", expires_in = 3600, scope = "read:library" }
+    end,
+    refresh = function(_, _, refresh_token)
+        refreshes = refreshes + 1
+        eq(refresh_token, "hc_rt_one", "refresh spends the stored token")
+        return "ok", { access_token = "hc_at_two", refresh_token = "hc_rt_two", expires_in = 3600 }
+    end,
+    revoke = function() return true end,
+}
+local auth = Auth.new({ client = fake, open_settings = open_settings, path = "unused" })
+eq(auth:isSignedIn(), false, "starts signed out")
+auth:beginDeviceFlow()
+eq(auth:pollOnce(), "success", "poll succeeds")
+eq(auth:accessToken(), "hc_at_one", "fresh token used as is")
+auth:invalidateAccessToken()
+eq(auth:accessToken(), "hc_at_two", "a lapsed token is refreshed")
+eq(refreshes, 1, "one refresh")
+eq(store.refresh_token, "hc_rt_two", "replacement refresh token persisted")
+auth:rememberUserId(7)
+eq(auth:cachedUserId(), 7, "user id cached")
+local signed = HardcoverClient.new({ hardcover_auth = auth })
+eq(signed:isConfigured(), true, "signed-in client is configured")
+eq(signed:bearerToken(), "hc_at_two", "client sends the session token")
+auth:signOut()
+eq(store.access_token, nil, "sign out forgets the token")
+eq(store.user_id, nil, "sign out forgets the user id")
+eq(auth:isSignedIn(), false, "signed out")
+eq(OAuth.tokenKind("hc_at_x"), "access", "oauth module ported")
 
 print("bookorbit_hardcover_test.lua: ok")

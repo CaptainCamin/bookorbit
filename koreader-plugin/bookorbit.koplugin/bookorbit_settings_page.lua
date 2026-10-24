@@ -361,6 +361,12 @@ local function accountBody(page, w, embedded)
         }),
         space(nil, px(16)),
         MenuUI.group(w, {
+            page.plugin:hasHardcover()
+                and MenuUI.row(iw, { icon = "log-out", label = _("Sign out of Hardcover"), sub = _("The catalog goes back to BookOrbit"), action = { kind = "hardcover-sign-out" } })
+                or MenuUI.row(iw, { icon = "book-open", label = _("Sign in to Hardcover"), sub = _("Use your Hardcover library instead of a server"), action = { kind = "hardcover-sign-in" } }),
+        }),
+        space(nil, px(16)),
+        MenuUI.group(w, {
             MenuUI.row(iw, { icon = "log-out", label = _("Sign out"), sub = _("This device stops syncing until you sign in again"), action = { kind = "sign-out" } }),
         }),
     }
@@ -609,6 +615,11 @@ local function onAction(page, action)
         plugin:setServerAddress(function() page:refresh() end)
     elseif kind == "test" then
         plugin:startPageTest(page, function() page:refresh() end)
+    elseif kind == "hardcover-sign-in" then
+        plugin:signInHardcover(function() page:refresh() end)
+    elseif kind == "hardcover-sign-out" then
+        plugin:signOutHardcover(catalog)
+        page:close()
     elseif kind == "sign-out" then
         confirm(_("Sign out of BookOrbit?"), _("This device stops syncing until you sign in again. Books already downloaded stay on it."), _("Sign out"), function()
             page:close()

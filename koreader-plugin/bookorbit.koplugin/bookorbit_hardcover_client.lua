@@ -25,6 +25,7 @@ local logger = require("logger")
 
 local BookOrbitApi = require("bookorbit_api")
 local Shape = require("bookorbit_hardcover_shape")
+local Stats = require("bookorbit_hardcover_stats")
 
 local ENDPOINT = "https://api.hardcover.app/v1/graphql"
 local USER_AGENT = "BookOrbit-KOReader-Hardcover"
@@ -72,21 +73,36 @@ function HardcoverClient.new(opts)
         server_url = ENDPOINT,
         username = "hardcover",
         hardcover_token = token ~= "" and token or nil,
+        hardcover_auth = opts.hardcover_auth,
         device_id = opts.device_id,
         device_model = opts.device_model,
         plugin_version = opts.plugin_version,
         background_requests = opts.background_requests == true,
         proxy = opts.proxy,
+        device_stats = opts.device_stats,
+        stats_store = opts.stats_store,
     }, HardcoverClient)
 end
 
+-- A signed-in session (refreshed as needed) wins over a pasted token.
+function HardcoverClient:bearerToken()
+    if self.hardcover_auth then
+        local token = self.hardcover_auth:accessToken()
+        if token then return token end
+    end
+    return self.hardcover_token
+end
+
 function HardcoverClient:isConfigured()
+    if self.hardcover_auth and self.hardcover_auth:isSignedIn() then return true end
     return self.hardcover_token ~= nil
 end
 
 -- Returns decoded_body, or nil, err_code, decoded_error_body. A GraphQL error
 -- inside a 200 answer is an error too.
 function HardcoverClient:requestBlocking(_method, _path, body)
+    local token = self:bearerToken()
+    if not token then return nil, 401 end
     local payload, encode_err = rapidjson.encode(body)
     if not payload then return nil, "encode_error: " .. tostring(encode_err) end
 
@@ -99,7 +115,7 @@ function HardcoverClient:requestBlocking(_method, _path, body)
             ["accept"] = "application/json",
             ["content-type"] = "application/json",
             ["content-length"] = #payload,
-            ["authorization"] = "Bearer " .. tostring(self.hardcover_token),
+            ["authorization"] = "Bearer " .. token,
             ["user-agent"] = USER_AGENT,
         },
         source = ltn12.source.string(payload),
@@ -116,6 +132,7 @@ function HardcoverClient:requestBlocking(_method, _path, body)
     end
 
     local decoded, decode_err = BookOrbitApi.decodeResponse(sink)
+    if code == 401 and self.hardcover_auth then self.hardcover_auth:invalidateAccessToken() end
     if code < 200 or code >= 300 then return nil, code, decoded end
     if decode_err then return nil, decode_err end
     if type(decoded) == "table" and decoded.errors then
@@ -190,6 +207,103 @@ local function emptyStreak()
     return { currentStreak = 0, longestStreak = 0, lastSevenDays = { false, false, false, false, false, false, false } }
 end
 
+-- ------------------------------------------------------------------- stats
+
+local STATS_PAGE = 100
+local MAX_STATS_PAGES = 8
+-- Journal and finished reads are fetched at most this often; the dashboard
+-- opens far more often than they change.
+local STATS_TTL = 15 * 60
+local PACE_DAYS = 90
+local DAY = 86400
+
+local function defaultDeviceStats()
+    return {
+        dailySeconds = function(since)
+            local ok, reader = pcall(require, "bookorbit_stats_reader")
+            return ok and reader.getDailySeconds(since) or {}
+        end,
+        secondsPerPage = function(since)
+            local ok, reader = pcall(require, "bookorbit_stats_reader")
+            return ok and reader.getMedianSecondsPerPage(since) or nil
+        end,
+    }
+end
+
+-- The parsed days live in their own settings file, keyed by account.
+local function defaultStatsStore()
+    local path = require("datastorage"):getSettingsDir() .. "/bookorbit_hardcover_days.lua"
+    return {
+        load = function(user_id)
+            local settings = require("luasettings"):open(path)
+            local saved = settings:readSetting("state")
+            if type(saved) == "table" and saved.user_id == user_id then return saved end
+            return nil
+        end,
+        save = function(state)
+            local settings = require("luasettings"):open(path)
+            settings:saveSetting("state", state)
+            settings:flush()
+        end,
+    }
+end
+
+function HardcoverClient:journalRows(user_id, since_iso)
+    local data, err = self:graphql("query { reading_journals(where: {user_id: {_eq: " .. user_id
+        .. '}, event: {_eq: "progress_updated"}, action_at: {_gt: "' .. since_iso
+        .. '"}}, order_by: [{action_at: asc}, {id: asc}], limit: ' .. STATS_PAGE .. ") { id book_id action_at metadata } }")
+    if not data then return nil, err end
+    return data.reading_journals or {}
+end
+
+function HardcoverClient:finishedDays(user_id, since_day)
+    local data = self:graphql("query { user_book_reads(where: {user_book: {user_id: {_eq: " .. user_id
+        .. '}}, finished_at: {_gte: "' .. since_day .. '"}}, limit: 1000) { finished_at } }')
+    local days = {}
+    for _i, read in ipairs(data and data.user_book_reads or {}) do
+        local day = Shape.day(read.finished_at)
+        if day then days[day] = true end
+    end
+    return days
+end
+
+-- Refreshes the cached reading days (resumable: at most MAX_STATS_PAGES pages
+-- a call, oldest first) and returns the dashboard's readingYear and streak.
+function HardcoverClient:readingStats(today)
+    local user_id = self:userId()
+    if not user_id then return nil end
+    local store = self.stats_store or defaultStatsStore()
+    local device = self.device_stats or defaultDeviceStats()
+
+    local state = store.load(user_id) or Stats.newState()
+    state.user_id = user_id
+    local window_start = today - Stats.WINDOW_DAYS * DAY
+    local device_daily = device.dailySeconds(window_start - 7 * DAY) or {}
+    local pace = device.secondsPerPage(today - PACE_DAYS * DAY)
+
+    local now = os.time()
+    if not state.fetched_at or now - state.fetched_at >= STATS_TTL or now < state.fetched_at then
+        local since = state.watermark or (os.date("!%Y-%m-%dT00:00:00Z", window_start))
+        -- A failed page (a token without read:journal, a 429) waits for the
+        -- next window; a long history that hit the page cap carries on at once.
+        local capped = false
+        for page = 1, MAX_STATS_PAGES do
+            local rows = self:journalRows(user_id, since)
+            if not rows then break end
+            Stats.apply(state, rows, { device_daily = device_daily, seconds_per_page = pace })
+            if #rows < STATS_PAGE then break end
+            since = state.watermark
+            capped = page == MAX_STATS_PAGES
+        end
+        state.finished = self:finishedDays(user_id, os.date("%Y-%m-%d", window_start))
+        if not capped then state.fetched_at = now end
+        Stats.prune(state, today)
+        store.save(state)
+    end
+
+    return Stats.readingYear(state, today, pace), Stats.streak(state, today, device_daily, state.finished or {}), pace
+end
+
 -- ----------------------------------------------------------------- dashboard
 
 -- One request, one top-level field. The streak, heatmap, year-ago, highlight
@@ -210,6 +324,9 @@ function HardcoverClient:catalogDashboard()
     local reading = Shape.sortByRecentStart(user.reading or {})
     local continue_reading = Shape.listItems(take(reading, CONTINUE_READING_LIMIT))
     local wanted = user.wanted or {}
+    local year, streak
+    local stats_ok, stats_year, stats_streak = pcall(self.readingStats, self, os.time())
+    if stats_ok then year, streak = stats_year, stats_streak end
     return {
         generatedAt = os.date("!%Y-%m-%dT%H:%M:%SZ"),
         username = user.username or "",
@@ -219,7 +336,8 @@ function HardcoverClient:catalogDashboard()
         continueReading = continue_reading,
         discover = Shape.listItems(take(shuffled(wanted), DISCOVER_LIMIT)),
         readingGoal = Shape.readingGoal(user.goals, today),
-        readingStreak = emptyStreak(),
+        readingStreak = streak or emptyStreak(),
+        readingYear = year,
         finishedThisYear = Shape.finishedItems(user.finished),
     }
 end
@@ -254,14 +372,88 @@ function HardcoverClient:catalogRoot()
         sections = {
             { id = "continue-reading", title = "Continue reading", section = "continue-reading" },
             { id = "recent", title = "Recently added", section = "recent" },
+            { id = "authors", title = "Authors", section = "authors" },
+            { id = "series", title = "Series", section = "series" },
             { id = "collections", title = "Shelves", section = "collections" },
         },
     }
 end
 
+function HardcoverClient:userId()
+    if self.user_id then return self.user_id end
+    local auth = self.hardcover_auth
+    local id = auth and auth:cachedUserId()
+    if not id then
+        local data = self:graphql("query { me { id } }")
+        id = data and tonumber(me(data).id)
+        if id and auth then auth:rememberUserId(id) end
+    end
+    self.user_id = id
+    return id
+end
+
+local LIST_PAGE_SIZE = 50
+
+local function listPage(section, items, page, size, offset, has_next)
+    return {
+        section = section, items = items, page = page, size = size, offset = offset,
+        hasNext = has_next, hasPrevious = offset > 0, total = offset + #items + (has_next and 1 or 0),
+    }
+end
+
+local function listOrder(sort)
+    if sort == "name_desc" then return "{name: desc}, {id: asc}" end
+    if sort == "books" then return "{books_count: desc_nulls_last}, {id: asc}" end
+    return "{name: asc}, {id: asc}"
+end
+
+-- Authors and series of the books on the reader's shelves. Hardcover has no
+-- per-reader list of either, so they are found through the shelved books.
+-- Filtering by name is not possible (no ilike), so a query answers empty.
+function HardcoverClient:ownedList(section, params)
+    local size = math.max(1, math.min(MAX_PAGE_SIZE, integer(params.size) or LIST_PAGE_SIZE))
+    local page = math.max(1, integer(params.page) or 1)
+    local offset = math.max(0, integer(params.offset) or (page - 1) * size)
+    if params.q and params.q ~= "" then return listPage(section, {}, page, size, 0, false) end
+
+    local user_id, err, errbody = self:userId()
+    if not user_id then return nil, err or "invalid_response", errbody end
+
+    local owned = "user_books: {user_id: {_eq: " .. user_id .. "}}"
+    local query
+    if section == "authors" then
+        query = "authors(where: {contributions: {book: {" .. owned .. "}}}, order_by: [" .. listOrder(params.sort)
+            .. "], limit: " .. (size + 1) .. ", offset: " .. offset .. ") { id name }"
+    else
+        query = "series(where: {book_series: {book: {" .. owned .. "}}}, order_by: [" .. listOrder(params.sort)
+            .. "], limit: " .. (size + 1) .. ", offset: " .. offset .. ") { id name author { name } }"
+    end
+    local data
+    data, err, errbody = self:graphql("query { " .. query .. " }")
+    if not data then return nil, err, errbody end
+
+    local rows = data[section] or {}
+    local has_next = #rows > size
+    local items = {}
+    for index = 1, math.min(size, #rows) do
+        local row = rows[index]
+        local entry = { id = tostring(row.id), title = row.name or "", section = section }
+        if section == "authors" then
+            entry.authorId = row.id
+        else
+            entry.seriesId = row.id
+            entry.seriesName = row.name
+            entry.subtitle = type(row.author) == "table" and row.author.name or nil
+        end
+        table.insert(items, entry)
+    end
+    return listPage(section, items, page, size, offset, has_next)
+end
+
 -- Shelves stand in for collections: ids 1 to 5 are Hardcover's status ids.
 function HardcoverClient:catalogSection(section, params)
     params = params or {}
+    if section == "authors" or section == "series" then return self:ownedList(section, params) end
     local items = {}
     if section == "collections" then
         for _i, shelf in ipairs(SHELVES) do
@@ -300,7 +492,7 @@ end
 -- Hardcover source, so those queries answer with an empty page.
 function HardcoverClient:catalogBooks(params)
     params = params or {}
-    if params.q or params.author or params.series or params.libraryId or params.smartScopeId then
+    if params.q or params.series or params.libraryId or params.smartScopeId then
         return emptyPage(params)
     end
 
@@ -315,6 +507,10 @@ function HardcoverClient:catalogBooks(params)
         local ids = idList(params.ids)
         if #ids == 0 then return emptyPage(params) end
         table.insert(conditions, "book_id: {_in: [" .. table.concat(ids, ",") .. "]}")
+    end
+    local author_id = integer(params.author)
+    if author_id then
+        table.insert(conditions, "book: {contributions: {author_id: {_eq: " .. author_id .. "}}}")
     end
     local series_id = integer(params.seriesId)
     if series_id then
