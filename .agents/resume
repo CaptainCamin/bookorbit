@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+PG_VERSION=17
+sudo pg_ctlcluster "$PG_VERSION" main start 2>/dev/null || true
+for _ in $(seq 1 8); do sudo -u postgres pg_isready -q && exit 0; sleep 1; done
+echo "postgres did not become ready" >&2
+exit 1

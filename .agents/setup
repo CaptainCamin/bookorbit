@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+step() { echo "==> $*"; }
+PG_VERSION=17
+
+step "system packages"
+if ! dpkg -s "postgresql-$PG_VERSION" "postgresql-$PG_VERSION-pgvector" >/dev/null 2>&1; then
+  sudo apt-get update -y
+  sudo apt-get install -y curl ca-certificates gnupg lsb-release
+  if [ ! -f /etc/apt/sources.list.d/pgdg.list ]; then
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor --yes -o /usr/share/keyrings/pgdg.gpg
+    echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+    sudo apt-get update -y
+  fi
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "postgresql-$PG_VERSION" "postgresql-$PG_VERSION-pgvector"
+fi
+
+step "postgres config"
+CONF_DIR="/etc/postgresql/$PG_VERSION/main/conf.d"
+sudo tee "$CONF_DIR/orb.conf" >/dev/null <<CONF
+fsync = off
+synchronous_commit = off
+full_page_writes = off
+max_connections = 200
+CONF
+sudo pg_ctlcluster "$PG_VERSION" main start 2>/dev/null || true
+for _ in $(seq 1 30); do sudo -u postgres pg_isready -q && break; sleep 1; done
+
+step "database roles and extensions"
+sudo -u postgres psql -qtAc "SELECT 1 FROM pg_roles WHERE rolname='bookorbit'" | grep -q 1 \
+  || sudo -u postgres psql -qc "CREATE ROLE bookorbit LOGIN SUPERUSER PASSWORD 'bookorbit'"
+for db in bookorbit bookorbit_e2e; do
+  sudo -u postgres psql -qtAc "SELECT 1 FROM pg_database WHERE datname='$db'" | grep -q 1 \
+    || sudo -u postgres createdb -O bookorbit "$db"
+  for ext in uuid-ossp pg_trgm unaccent vector; do
+    sudo -u postgres psql -q -d "$db" -c "CREATE EXTENSION IF NOT EXISTS \"$ext\""
+  done
+done
+
+step "node dependencies"
+# Corepack's pnpm shim crashes on this Node; install the pinned pnpm directly.
+PNPM_VERSION="$(node -p "require('./package.json').packageManager.split('@')[1]")"
+if [ "$(pnpm -v 2>/dev/null || true)" != "$PNPM_VERSION" ]; then
+  sudo rm -f /usr/local/bin/pnpm /usr/local/bin/pnpx
+  sudo npm install -g --force "pnpm@$PNPM_VERSION"
+fi
+pnpm install --frozen-lockfile
+
+step "env file"
+[ -f server/.env ] || cp -- server/.env.example server/.env
+
+step "migrations"
+(cd server && pnpm db:migrate)
+
+# Processes do not survive into the snapshot; resume restarts postgres.
+sudo pg_ctlcluster "$PG_VERSION" main stop || true
+step "done"
